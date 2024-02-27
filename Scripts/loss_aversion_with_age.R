@@ -64,12 +64,37 @@ lambda <- 0.05
 
 b_rate <- 0.1
 
-output_df <- tibble(
-  turn = rep(1:turns, rounds),
-  p = as.numeric(rep(NA_real_, turns * rounds)),
-  round = as.factor(rep(1:rounds, each = turns)), 
-  lambda = lambda
-)
+age_categories <- 10
+
+age_probs <- c(rep(0.1, times = 10))
+
+# age_probs <- c(0.05,
+#                0.05,
+#                0.05,
+#                0.05, 
+#                0.05, 
+#                0.05, 
+#                0.1,
+#                0.2,
+#                0.2,
+#                0.2)
+
+output_df <- matrix(
+  data = NA_real_,
+  nrow = turns * rounds,
+  ncol = 3 + age_categories
+) %>%
+  as.data.frame()
+
+colnames(output_df) <- c("turn", 
+                         "round", 
+                         "lambda", 
+                         map_chr(.x = 1:age_categories, 
+                                 ~ paste0("p_",.x)))
+
+output_df$turn <- rep(1:turns, rounds)
+output_df$round <- as.factor(rep(1:rounds, each = turns))
+output_df$lambda <- lambda
 
 # Begin the rounds
 for (round in 1:rounds) {
@@ -88,16 +113,28 @@ for (round in 1:rounds) {
   agents_df$type <- runif(N)
   agents_df[,4] <- runif(N)
   
-  # Initial average preference
-  output_df[output_df$turn == 1 &
-              output_df$round == round, "p"] <-
-    mean(agents_df[,4])
-  
   # Then we assing age categories at random as well
   # Let's start with 10 age categories
   agents_df$age <- sample(c(1:10), 
                           size = N, 
-                          replace = T)
+                          replace = T, 
+                          prob = age_probs)
+  
+  smdf <- agents_df %>% 
+    select(age,4) 
+  colnames(smdf) <- c("age","p")
+  smdf <- smdf %>% group_by(age) %>% summarise(avg = mean(p)) %>% ungroup()
+  
+  smdf <- smdf  %>% 
+    add_row(
+      age = setdiff(1:age_categories, smdf$age), 
+      avg = rep(0, times = length(setdiff(1:age_categories, smdf$age)))) %>% 
+    arrange(age)
+  
+  # Initial average preference
+  output_df[output_df$turn == 1 &
+              output_df$round == round, 4:ncol(output_df)] <-
+    smdf %>% pull(avg)
   
   # Build the loop for one round
   
@@ -129,15 +166,15 @@ for (round in 1:rounds) {
     higher_policy <- which(agents_df[demonstrators,turn+2] >= agents_df[,turn+2])
     
     # Empty container for benefit comparison
-    benefits_comparison <- vector(length = N, mode = "numeric")
+    benefits_comparison <- vector(length = nrow(agents_df), mode = "numeric")
     
     # Benefit comparisons for those where new policy is lower
     benefits_comparison[lower_policy] <- (net_benefits[demonstrators[lower_policy]] - net_benefits[lower_policy]) - 
-      lambda * (benefits[lower_policy]-benefits[demonstrators[lower_policy]])
+      lambda/((10-agents_df$age[lower_policy])+1) * (benefits[lower_policy]-benefits[demonstrators[lower_policy]])
     
     # Benefit comparisons for those where new policy is higher 
     benefits_comparison[higher_policy] <- (net_benefits[demonstrators[higher_policy]] - net_benefits[higher_policy]) - 
-      lambda * (costs[demonstrators[higher_policy]]-costs[higher_policy])
+      lambda/((10-agents_df$age[higher_policy])+1) * (costs[demonstrators[higher_policy]]-costs[higher_policy])
     
     # People who perceive a higher net-benefit with the observe policy learn
     # Otherwise they stay where they are 
@@ -153,9 +190,19 @@ for (round in 1:rounds) {
       agents_df[nonlearners, (turn+2)]
     
     # Keep track of average policy
+    smdf <- agents_df %>% 
+      select(age,(turn+3)) 
+    colnames(smdf) <- c("age","p")
+    smdf <- smdf %>% group_by(age) %>% summarise(avg = mean(p)) %>% ungroup()
+    smdf <- smdf  %>% 
+      add_row(
+        age = setdiff(1:age_categories, smdf$age), 
+        avg = rep(0, times = length(setdiff(1:age_categories, smdf$age)))) %>% 
+      arrange(age)
+    
     output_df[output_df$turn == turn &
-                output_df$round == round, "p"] <-
-      mean(agents_df[, (turn+2)], na.rm = T)
+                output_df$round == round, 4:ncol(output_df)] <-
+      smdf %>% pull(avg)
     
     # Now, people on the last category die 
     agents_df <- agents_df %>% 
@@ -187,11 +234,15 @@ for (round in 1:rounds) {
 # Examine the results ----
 
 output_df %>% 
+  pivot_longer(4:13, 
+               values_to = "p", 
+               names_to = "group") %>% 
   ggplot(
     aes(
       x = turn, 
       y = p, 
-      color = round
+      color = group
     )
   ) +
-  geom_line(linetype = "dashed")
+  geom_line() +
+  facet_wrap(~round)
