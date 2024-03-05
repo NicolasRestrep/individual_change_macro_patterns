@@ -65,57 +65,32 @@ N <- 50
 
 turns <- 100
 
-rounds <- 20
-
-lambda <- 0.05
+rounds <- 1
 
 b_rate <- 0.1
 
 age_categories <- 10
 
-age_probs <- c(rep(0.1, times = 10))
-
-# age_probs <- c(0.2,
-#                0.2,
-#                0.2,
-#                0.2,
-#                0.2,
-#                0.0,
-#                0.0,
-#                0.0,
-#                0.0,
-#                0.0)
-
-# age_probs <- c(0.0,
-#                0.0,
-#                0.0,
-#                0.0,
-#                0.0,
-#                0.2,
-#                0.2,
-#                0.2,
-#                0.2,
-#                0.2)
+learn_prob_age <- c(rep(0.1, times = age_categories))
+age_probs <- c(rep(0.1, times = age_categories))
 
 
 # Dataframe to keep track of results
 output_df <- matrix(
   data = NA_real_,
   nrow = turns * rounds,
-  ncol = 4 + age_categories
+  ncol = 3 + age_categories
 ) %>%
   as.data.frame()
 
 colnames(output_df) <- c("turn", 
                          "round", 
-                         "lambda", 
                          map_chr(.x = 1:age_categories, 
                                  ~ paste0("p_",.x)), 
                          "total_p")
 
 output_df$turn <- rep(1:turns, rounds)
 output_df$round <- as.factor(rep(1:rounds, each = turns))
-output_df$lambda <- lambda
 
 # Begin the rounds
 for (round in 1:rounds) {
@@ -140,6 +115,7 @@ for (round in 1:rounds) {
                           size = N, 
                           replace = T, 
                           prob = age_probs)
+  
   print(table(agents_df$age))
   
   # Average policy for each age-group
@@ -156,7 +132,7 @@ for (round in 1:rounds) {
   
   # Initial average preference
   output_df[output_df$turn == 1 &
-              output_df$round == round, 4:(ncol(output_df)-1)] <-
+              output_df$round == round, 3:(ncol(output_df)-1)] <-
     smdf %>% pull(avg)
   output_df[output_df$turn == 1 &
               output_df$round == round,ncol(output_df)] <- mean(agents_df[,4])
@@ -182,6 +158,9 @@ for (round in 1:rounds) {
     demonstrators <- sample(c(1:nrow(agents_df)),
                             size = nrow(agents_df),
                             replace = T)
+    
+    # Function for prob of learning by age 
+    
     
     # I am going to assume that the status quo policy will be the one that individuals currently hold 
     # For whom is the observed new policy lower than where they currently are?
@@ -243,19 +222,19 @@ for (round in 1:rounds) {
     new_births <- round(nrow(agents_df) * b_rate)
     
     if(new_births > 0) {
-    new_ids <- c((max(agents_df$id)+1):(max(agents_df$id)+(new_births)))
-    # Add new members to the dataframe
-    agents_df <- agents_df %>% 
-      add_row(
-        id = new_ids,
-        type = sample(agents_df$type, size = new_births, replace = T), 
-        age = 1
-      )
-    
-    # New policies for the newborns
-    agents_df[agents_df$id %in% new_ids,turn+3] <- sample(na.omit(agents_df[,turn+3]),
-                                                          size = new_births,
-                                                          replace = T)
+      new_ids <- c((max(agents_df$id)+1):(max(agents_df$id)+(new_births)))
+      # Add new members to the dataframe
+      agents_df <- agents_df %>% 
+        add_row(
+          id = new_ids,
+          type = sample(agents_df$type, size = new_births, replace = T), 
+          age = 1
+        )
+      
+      # New policies for the newborns
+      agents_df[agents_df$id %in% new_ids,turn+3] <- sample(na.omit(agents_df[,turn+3]),
+                                                            size = new_births,
+                                                            replace = T)
     }
   }
 }
@@ -290,8 +269,8 @@ output_df %>%
 
 calculate_change_per_round <- function(rounds, turns) {
   change_matrix <- matrix(NA_real_, 
-                         nrow = (turns-1), 
-                         ncol = rounds)
+                          nrow = (turns-1), 
+                          ncol = rounds)
   
   for (r in 1:rounds) {
     change_matrix[,r] <- abs(diff(output_df[output_df$round==r,]$total_p))
