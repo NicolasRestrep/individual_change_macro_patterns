@@ -134,6 +134,7 @@ for (round in 1:rounds) {
   output_df[output_df$turn == 1 &
               output_df$round == round, 3:(ncol(output_df)-1)] <-
     smdf %>% pull(avg)
+  
   output_df[output_df$turn == 1 &
               output_df$round == round,ncol(output_df)] <- mean(agents_df[,4])
   
@@ -159,39 +160,60 @@ for (round in 1:rounds) {
                             size = nrow(agents_df),
                             replace = T)
     
-    # Function for prob of learning by age 
+    # Function for prob of learning by age
+    # We will begin with equal probability per category
+    prob_df <- tibble(
+      age = 1:10,
+      learning_probs = rmutil::dbetabinom(
+        y = c(1:age_categories),
+        size = 10,
+        m = 0.5,
+        s = 2
+      )
+    )
     
+    prob_df <- agents_df %>% 
+      left_join(., prob_df, by = "age") %>% 
+      select(id, age, learning_probs)
     
-    # I am going to assume that the status quo policy will be the one that individuals currently hold 
-    # For whom is the observed new policy lower than where they currently are?
-    lower_policy <- which(agents_df[demonstrators,turn+2] < agents_df[,turn+2])
+    learn_outcome <- rbinom(n = nrow(agents_df), 
+                       size = 1,
+                      p = prob_df$learning_probs)
     
-    # For whom is the observed new policy higher than where they currently are? 
-    higher_policy <- which(agents_df[demonstrators,turn+2] >= agents_df[,turn+2])
-    
+    learners <- which(learn_outcome==1)
+  
     # Empty container for benefit comparison
-    benefits_comparison <- vector(length = nrow(agents_df), mode = "numeric")
+    # Only for learners
+    benefits_comparison <- vector(length = length(learners), 
+                                  mode = "numeric")
     
-    # Benefit comparisons for those where new policy is lower
-    benefits_comparison[lower_policy] <- (net_benefits[demonstrators[lower_policy]] - net_benefits[lower_policy]) - 
-      lambda/((10-agents_df$age[lower_policy])+1) * (benefits[lower_policy]-benefits[demonstrators[lower_policy]])
-    
-    # Benefit comparisons for those where new policy is higher 
-    benefits_comparison[higher_policy] <- (net_benefits[demonstrators[higher_policy]] - net_benefits[higher_policy]) - 
-      lambda/((10-agents_df$age[higher_policy])+1) * (costs[demonstrators[higher_policy]]-costs[higher_policy])
+     # Benefit comparisons for those where new policy is lower
+    benefits_comparison <- net_benefits[demonstrators[learners]] - net_benefits[learners]
     
     # People who perceive a higher net-benefit with the observe policy learn
     # Otherwise they stay where they are 
-    learners <- which(benefits_comparison > 0)
-    nonlearners <- which(benefits_comparison <= 0)
+    changers <- learners[which(benefits_comparison > 0)]
     
-    # Learners update
-    agents_df[learners, (turn+3)] <-
-      agents_df[, turn+2][demonstrators[learners]]
+    if(is_empty(changers)) {
+      stayers <- c(1:nrow(agents_df))
+      
+      # Non-learners stay
+      agents_df[stayers, (turn+3)] <-
+        agents_df[stayers, (turn+2)]
+      
+    } else {
+      stayers <- c(1:nrow(agents_df))[-c(changers)]
+      
+      # Changers update
+      agents_df[changers, (turn+3)] <-
+        agents_df[, turn+2][demonstrators[changers]]
+      
+      # Non-learners stay
+      agents_df[stayers, (turn+3)] <-
+        agents_df[stayers, (turn+2)]
+      
+    }
     
-    # Non-learners stay
-    agents_df[nonlearners, (turn+3)] <-
-      agents_df[nonlearners, (turn+2)]
     
     # Keep track of average policy for each age-group
     smdf <- agents_df %>% 
@@ -205,7 +227,7 @@ for (round in 1:rounds) {
       arrange(age)
     
     output_df[output_df$turn == turn &
-                output_df$round == round, 4:(ncol(output_df)-1)] <-
+                output_df$round == round, 3:(ncol(output_df)-1)] <-
       smdf %>% pull(avg)
     
     output_df[output_df$turn == turn &
@@ -230,6 +252,10 @@ for (round in 1:rounds) {
           type = sample(agents_df$type, size = new_births, replace = T), 
           age = 1
         )
+      
+      print(sample(na.omit(agents_df[,turn+3]),
+                   size = new_births,
+                   replace = T))
       
       # New policies for the newborns
       agents_df[agents_df$id %in% new_ids,turn+3] <- sample(na.omit(agents_df[,turn+3]),
