@@ -65,13 +65,14 @@ N <- 50
 
 turns <- 100
 
-rounds <- 1
+rounds <- 10
 
 b_rate <- 0.1
 
 age_categories <- 10
 
 learn_prob_age <- c(rep(0.1, times = age_categories))
+
 age_probs <- c(rep(0.1, times = age_categories))
 
 
@@ -170,6 +171,7 @@ for (round in 1:rounds) {
         m = 0.5,
         s = 2
       )
+      
     )
     
     prob_df <- agents_df %>% 
